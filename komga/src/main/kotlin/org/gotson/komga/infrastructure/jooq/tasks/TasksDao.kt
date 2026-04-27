@@ -9,6 +9,7 @@ import org.gotson.komga.jooq.tasks.Tables
 import org.jooq.DSLContext
 import org.jooq.Query
 import org.jooq.Record2
+import org.jooq.SQLDialect
 import org.jooq.impl.DSL
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.beans.factory.annotation.Value
@@ -19,6 +20,7 @@ import java.time.LocalDateTime
 import java.time.ZoneId
 
 private val logger = KotlinLogging.logger {}
+private const val POSTGRESQL_TAKE_FIRST_MAX_ATTEMPTS = 100
 
 @Component
 @DependsOn("flywaySecondaryMigrationInitializer")
@@ -51,7 +53,18 @@ class TasksDao(
     )
 
   @Transactional
-  override fun takeFirst(owner: String): Task? {
+  override fun takeFirst(owner: String): Task? =
+    when (dslRW.dialect().family()) {
+      SQLDialect.POSTGRES -> takeFirstPostgresql(owner)
+      else -> takeFirstSynchronized(owner)
+    }
+
+  private fun takeFirstSynchronized(owner: String): Task? =
+    synchronized(this) {
+      takeFirstSqlite(owner)
+    }
+
+  private fun takeFirstSqlite(owner: String): Task? {
     val task =
       dslRW
         .selectBase()
@@ -76,6 +89,74 @@ class TasksDao(
 
     return task
   }
+
+  private fun takeFirstPostgresql(owner: String): Task? =
+    dslRW.transactionResult { configuration ->
+      val dsl = DSL.using(configuration)
+      val skippedIds = mutableSetOf<String>()
+
+      repeat(POSTGRESQL_TAKE_FIRST_MAX_ATTEMPTS) {
+        val candidate = dsl.selectPostgresqlCandidate(skippedIds) ?: return@transactionResult null
+
+        candidate.groupId?.let { groupId ->
+          dsl.lockPostgresqlGroup(groupId)
+          if (!dsl.isPostgresqlGroupAvailable(groupId)) {
+            skippedIds += candidate.id
+            return@repeat
+          }
+        }
+
+        val task = dsl.claimPostgresqlCandidate(candidate.id, owner)
+        if (task != null) return@transactionResult task
+
+        skippedIds += candidate.id
+      }
+
+      null
+    }
+
+  private fun DSLContext.selectPostgresqlCandidate(skippedIds: Collection<String>): TaskCandidate? {
+    var condition = tasksAvailableCondition
+    if (skippedIds.isNotEmpty()) condition = condition.and(t.ID.notIn(skippedIds))
+
+    return select(t.ID, t.GROUP_ID)
+      .from(t)
+      .where(condition)
+      .orderBy(t.PRIORITY.desc(), t.LAST_MODIFIED_DATE)
+      .limit(1)
+      .forUpdate()
+      .skipLocked()
+      .fetchOne()
+      ?.let { TaskCandidate(it.value1(), it.value2()) }
+  }
+
+  private fun DSLContext.lockPostgresqlGroup(groupId: String) {
+    execute("SELECT pg_advisory_xact_lock(hashtextextended(?, 0))", groupId)
+  }
+
+  private fun DSLContext.isPostgresqlGroupAvailable(groupId: String): Boolean =
+    !fetchExists(
+      t,
+      t.OWNER.isNotNull.and(t.GROUP_ID.eq(groupId)),
+    )
+
+  private fun DSLContext.claimPostgresqlCandidate(
+    taskId: String,
+    owner: String,
+  ): Task? =
+    update(t)
+      .set(t.OWNER, owner)
+      .where(t.ID.eq(taskId))
+      .and(t.OWNER.isNull)
+      .returning(t.CLASS, t.PAYLOAD)
+      .fetchOne()
+      ?.into(t.CLASS, t.PAYLOAD)
+      ?.toDomain()
+
+  private data class TaskCandidate(
+    val id: String,
+    val groupId: String?,
+  )
 
   override fun findAll(): List<Task> =
     dslRO

@@ -15,41 +15,55 @@ import javax.sql.DataSource
 class DataSourcesConfiguration(
   private val komgaProperties: KomgaProperties,
 ) {
-  @Bean("sqliteDataSourceRW")
+  @Bean(name = ["dataSourceRW", "sqliteDataSourceRW"])
   @Primary
-  fun sqliteDataSourceRW(): DataSource =
-    buildDataSource("SqliteMainPoolRW", SqliteUdfDataSource::class.java, komgaProperties.database)
+  fun dataSourceRW(): DataSource =
+    buildDataSource(DatabaseScope.MAIN, "RW", SqliteUdfDataSource::class.java, komgaProperties.database)
       .apply {
         // force pool size to 1 if the pool is only used for writes
-        if (komgaProperties.database.shouldSeparateReadFromWrites()) this.maximumPoolSize = 1
+        if (komgaProperties.database.backend == DatabaseBackend.SQLITE && komgaProperties.database.shouldSeparateReadFromWrites()) {
+          this.maximumPoolSize = 1
+        }
       }
 
-  @Bean("sqliteDataSourceRO")
-  fun sqliteDataSourceRO(): DataSource =
+  @Bean(name = ["dataSourceRO", "sqliteDataSourceRO"])
+  fun dataSourceRO(): DataSource =
     if (komgaProperties.database.shouldSeparateReadFromWrites())
-      buildDataSource("SqliteMainPoolRO", SqliteUdfDataSource::class.java, komgaProperties.database)
+      buildDataSource(DatabaseScope.MAIN, "RO", SqliteUdfDataSource::class.java, komgaProperties.database)
     else
-      sqliteDataSourceRW()
+      dataSourceRW()
 
   @Bean("tasksDataSourceRW")
   fun tasksDataSourceRW(): DataSource =
-    buildDataSource("SqliteTasksPoolRW", SQLiteDataSource::class.java, komgaProperties.tasksDb)
+    buildDataSource(DatabaseScope.TASKS, "RW", SQLiteDataSource::class.java, komgaProperties.tasksDb)
       .apply {
         // pool size is always 1:
         // - if there's only 1 pool for read and writes, size should be 1
         // - if there's a separate read pool, the write pool size should be 1
-        this.maximumPoolSize = 1
+        if (komgaProperties.tasksDb.backend == DatabaseBackend.SQLITE) this.maximumPoolSize = 1
       }
 
   @Bean("tasksDataSourceRO")
   fun tasksDataSourceRO(): DataSource =
     if (komgaProperties.tasksDb.shouldSeparateReadFromWrites())
-      buildDataSource("SqliteTasksPoolRO", SQLiteDataSource::class.java, komgaProperties.tasksDb)
+      buildDataSource(DatabaseScope.TASKS, "RO", SQLiteDataSource::class.java, komgaProperties.tasksDb)
     else
       tasksDataSourceRW()
 
   private fun buildDataSource(
-    poolName: String,
+    scope: DatabaseScope,
+    accessMode: String,
+    dataSourceClass: Class<out SQLiteDataSource>,
+    databaseProps: KomgaProperties.Database,
+  ): HikariDataSource =
+    when (databaseProps.backend) {
+      DatabaseBackend.SQLITE -> buildSqliteDataSource(scope, accessMode, dataSourceClass, databaseProps)
+      DatabaseBackend.POSTGRESQL -> buildPostgresqlDataSource(scope, accessMode, databaseProps)
+    }
+
+  private fun buildSqliteDataSource(
+    scope: DatabaseScope,
+    accessMode: String,
     dataSourceClass: Class<out SQLiteDataSource>,
     databaseProps: KomgaProperties.Database,
   ): HikariDataSource {
@@ -89,13 +103,50 @@ class DataSourcesConfiguration(
     return HikariDataSource(
       HikariConfig().apply {
         this.dataSource = dataSource
-        this.poolName = poolName
+        this.poolName = "${databaseProps.backend.poolNamePrefix()}${scope.poolNamePart()}Pool$accessMode"
         this.maximumPoolSize = poolSize
       },
     )
   }
 
-  fun KomgaProperties.Database.isMemory() = file.contains(":memory:") || file.contains("mode=memory")
+  private fun buildPostgresqlDataSource(
+    scope: DatabaseScope,
+    accessMode: String,
+    databaseProps: KomgaProperties.Database,
+  ): HikariDataSource {
+    val poolSize = databaseProps.poolSize ?: Runtime.getRuntime().availableProcessors().coerceAtMost(databaseProps.maxPoolSize)
 
-  fun KomgaProperties.Database.shouldSeparateReadFromWrites(): Boolean = !isMemory() && journalMode == SQLiteConfig.JournalMode.WAL
+    return HikariDataSource(
+      HikariConfig().apply {
+        this.driverClassName = "org.postgresql.Driver"
+        this.jdbcUrl = databaseProps.postgresql.url
+        this.username = databaseProps.postgresql.username
+        this.password = databaseProps.postgresql.password
+        this.poolName = "${databaseProps.backend.poolNamePrefix()}${scope.poolNamePart()}Pool$accessMode"
+        this.maximumPoolSize = poolSize
+        this.initializationFailTimeout = -1
+        if (accessMode == "RO") this.isReadOnly = true
+      },
+    )
+  }
+
+  fun KomgaProperties.Database.isMemory() = backend == DatabaseBackend.SQLITE && (file.contains(":memory:") || file.contains("mode=memory"))
+
+  fun KomgaProperties.Database.shouldSeparateReadFromWrites(): Boolean =
+    when (backend) {
+      DatabaseBackend.SQLITE -> !isMemory() && journalMode == SQLiteConfig.JournalMode.WAL
+      DatabaseBackend.POSTGRESQL -> true
+    }
+
+  private fun DatabaseBackend.poolNamePrefix(): String =
+    when (this) {
+      DatabaseBackend.SQLITE -> "Sqlite"
+      DatabaseBackend.POSTGRESQL -> "Postgresql"
+    }
+
+  private fun DatabaseScope.poolNamePart(): String =
+    when (this) {
+      DatabaseScope.MAIN -> "Main"
+      DatabaseScope.TASKS -> "Tasks"
+    }
 }

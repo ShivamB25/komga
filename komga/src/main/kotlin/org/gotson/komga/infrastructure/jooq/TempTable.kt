@@ -2,7 +2,9 @@ package org.gotson.komga.infrastructure.jooq
 
 import com.github.f4b6a3.tsid.TsidCreator
 import org.jooq.DSLContext
+import org.jooq.SQLDialect
 import org.jooq.impl.DSL
+import org.jooq.impl.SQLDataType
 import java.io.Closeable
 
 /**
@@ -21,7 +23,14 @@ class TempTable private constructor(
   private var created = false
 
   fun create() {
-    dslContext.execute("CREATE TEMPORARY TABLE $name (STRING varchar NOT NULL);")
+    if (dslContext.dialect().family() == SQLDialect.SQLITE) {
+      dslContext.execute("CREATE TEMPORARY TABLE $name (STRING varchar NOT NULL);")
+    } else {
+      dslContext
+        .createTemporaryTable(DSL.name(name))
+        .column(DSL.name("STRING"), SQLDataType.VARCHAR.nullable(false))
+        .execute()
+    }
     created = true
   }
 
@@ -47,7 +56,13 @@ class TempTable private constructor(
   fun selectTempStrings() = dslContext.select(DSL.field(DSL.name("STRING"), String::class.java)).from(DSL.table(DSL.name(name)))
 
   override fun close() {
-    if (created) dslContext.dropTableIfExists(name).execute()
+    if (created) {
+      if (dslContext.dialect().family() == SQLDialect.SQLITE) {
+        dslContext.execute("DROP TABLE IF EXISTS $name;")
+      } else {
+        dslContext.dropTableIfExists(DSL.name(name)).execute()
+      }
+    }
   }
 
   companion object {

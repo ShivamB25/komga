@@ -6,6 +6,9 @@ import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
+import java.util.concurrent.Callable
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 @SpringBootTest
 class TasksDaoTest(
@@ -127,6 +130,39 @@ class TasksDaoTest(
     assertThat(taskEmpty).isNull()
 
     assertThat(allTasks.keys).containsExactlyInAnyOrder("thread1", "thread2")
+  }
+
+  @Test
+  fun `given concurrent workers when taking tasks then no task is claimed twice`() {
+    // given
+    tasksDao.save(
+      buildList {
+        (1..20).forEach { add(Task.HashBookPages("book$it", 5)) }
+      },
+    )
+
+    val executor = Executors.newFixedThreadPool(8)
+
+    try {
+      // when
+      val claimed =
+        executor
+          .invokeAll(
+            (1..20).map { worker ->
+              Callable {
+                tasksDao.takeFirst("thread$worker")
+              }
+            },
+          ).mapNotNull { it.get(10, TimeUnit.SECONDS) }
+
+      // then
+      assertThat(claimed).hasSize(20)
+      assertThat(claimed.map { it.uniqueId }).doesNotHaveDuplicates()
+      assertThat(tasksDao.hasAvailable()).isFalse
+    } finally {
+      executor.shutdownNow()
+      assertThat(executor.awaitTermination(10, TimeUnit.SECONDS)).isTrue
+    }
   }
 
   @Test

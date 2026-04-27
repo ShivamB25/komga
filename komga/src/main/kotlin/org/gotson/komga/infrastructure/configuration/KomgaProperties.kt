@@ -3,6 +3,7 @@ package org.gotson.komga.infrastructure.configuration
 import jakarta.annotation.PostConstruct
 import jakarta.validation.constraints.NotBlank
 import jakarta.validation.constraints.Positive
+import org.gotson.komga.infrastructure.datasource.DatabaseBackend
 import org.springframework.boot.context.properties.ConfigurationProperties
 import org.springframework.boot.convert.DurationUnit
 import org.springframework.stereotype.Component
@@ -18,11 +19,47 @@ import kotlin.io.path.createDirectories
 @Validated
 class KomgaProperties {
   @PostConstruct
-  private fun makeDirs() {
+  private fun validateAndMakeDirs() {
+    validateDatabaseBackendConfiguration()
     try {
-      Path(database.file).parent.createDirectories()
-      Path(tasksDb.file).parent.createDirectories()
+      if (database.backend == DatabaseBackend.SQLITE) Path(database.file).parent.createDirectories()
+      if (tasksDb.backend == DatabaseBackend.SQLITE) Path(tasksDb.file).parent.createDirectories()
     } catch (_: Exception) {
+    }
+  }
+
+  private fun validateDatabaseBackendConfiguration() {
+    require(database.backend == tasksDb.backend) {
+      "komga.database.backend and komga.tasks-db.backend must use the same backend family; configure both as SQLITE or POSTGRESQL"
+    }
+
+    when (database.backend) {
+      DatabaseBackend.SQLITE -> {
+        val unsupportedProperties =
+          database.postgresqlOnlyProperties("komga.database") +
+            tasksDb.postgresqlOnlyProperties("komga.tasks-db")
+
+        require(unsupportedProperties.isEmpty()) {
+          "SQLite backend does not support PostgreSQL-only properties: ${unsupportedProperties.joinToString()}. Remove them or set komga.database.backend and komga.tasks-db.backend to POSTGRESQL. Values are redacted."
+        }
+      }
+      DatabaseBackend.POSTGRESQL -> {
+        val missingProperties =
+          database.missingPostgresqlProperties("komga.database") +
+            tasksDb.missingPostgresqlProperties("komga.tasks-db")
+
+        require(missingProperties.isEmpty()) {
+          "PostgreSQL backend requires explicit non-empty properties: ${missingProperties.joinToString()}"
+        }
+
+        val unsupportedProperties =
+          database.sqliteOnlyProperties("komga.database") +
+            tasksDb.sqliteOnlyProperties("komga.tasks-db")
+
+        require(unsupportedProperties.isEmpty()) {
+          "PostgreSQL backend does not support SQLite-only properties: ${unsupportedProperties.joinToString()}. Remove them or set komga.database.backend and komga.tasks-db.backend to SQLITE. Values are redacted."
+        }
+      }
     }
   }
 
@@ -57,6 +94,8 @@ class KomgaProperties {
   }
 
   class Database {
+    var backend: DatabaseBackend = DatabaseBackend.SQLITE
+
     @get:NotBlank
     var file: String = ""
 
@@ -77,6 +116,36 @@ class KomgaProperties {
     var pragmas: Map<String, String> = emptyMap()
 
     var checkLocalFilesystem: Boolean = true
+
+    var postgresql = PostgreSql()
+
+    fun postgresqlOnlyProperties(propertyPrefix: String): List<String> =
+      listOfNotNull(
+        "$propertyPrefix.postgresql.url".takeIf { !postgresql.url.isNullOrBlank() },
+        "$propertyPrefix.postgresql.username".takeIf { !postgresql.username.isNullOrBlank() },
+        "$propertyPrefix.postgresql.password".takeIf { !postgresql.password.isNullOrBlank() },
+      )
+
+    fun missingPostgresqlProperties(propertyPrefix: String): List<String> =
+      listOfNotNull(
+        "$propertyPrefix.postgresql.url".takeIf { postgresql.url.isNullOrBlank() },
+        "$propertyPrefix.postgresql.username".takeIf { postgresql.username.isNullOrBlank() },
+        "$propertyPrefix.postgresql.password".takeIf { postgresql.password.isNullOrBlank() },
+      )
+
+    fun sqliteOnlyProperties(propertyPrefix: String): List<String> =
+      listOfNotNull(
+        "$propertyPrefix.pragmas".takeIf { pragmas.isNotEmpty() },
+        "$propertyPrefix.busy-timeout".takeIf { busyTimeout != null },
+      )
+
+    class PostgreSql {
+      var url: String? = null
+
+      var username: String? = null
+
+      var password: String? = null
+    }
   }
 
   class Fonts {
