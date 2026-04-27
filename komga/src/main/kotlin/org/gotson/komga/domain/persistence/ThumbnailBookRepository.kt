@@ -1,6 +1,7 @@
 package org.gotson.komga.domain.persistence
 
 import org.gotson.komga.domain.model.ThumbnailBook
+import org.gotson.komga.domain.model.ThumbnailGenerationProfile
 
 interface ThumbnailBookRepository {
   fun findByIdOrNull(thumbnailId: String): ThumbnailBook?
@@ -14,10 +15,14 @@ interface ThumbnailBookRepository {
     type: Set<ThumbnailBook.Type>,
   ): Collection<ThumbnailBook>
 
+  fun findAllByType(type: Set<ThumbnailBook.Type>): Collection<ThumbnailBook>
+
   fun findAllBookIdsByThumbnailTypeAndDimensionSmallerThan(
     type: ThumbnailBook.Type,
     size: Int,
   ): Collection<String>
+
+  fun findAllBookIdsByStaleGeneratedProfile(profile: ThumbnailGenerationProfile): Collection<String>
 
   fun existsById(thumbnailId: String): Boolean
 

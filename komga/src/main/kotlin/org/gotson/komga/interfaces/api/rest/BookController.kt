@@ -349,6 +349,8 @@ class BookController(
   ): ByteArray {
     contentRestrictionChecker.checkContentRestriction(principal.user, bookId)
 
+    findBookThumbnailForRoute(bookId, thumbnailId)
+
     return bookLifecycle.getThumbnailBytesByThumbnailId(thumbnailId)?.bytes
       ?: throw ResponseStatusException(HttpStatus.NOT_FOUND)
   }
@@ -405,10 +407,10 @@ class BookController(
     @PathVariable(name = "bookId") bookId: String,
     @PathVariable(name = "thumbnailId") thumbnailId: String,
   ) {
-    thumbnailBookRepository.findByIdOrNull(thumbnailId)?.let {
+    findBookThumbnailForRoute(bookId, thumbnailId).let {
       thumbnailBookRepository.markSelected(it)
       eventPublisher.publishEvent(DomainEvent.ThumbnailBookAdded(it.copy(selected = true)))
-    } ?: throw ResponseStatusException(HttpStatus.NOT_FOUND)
+    }
   }
 
   @Operation(summary = "Delete book poster", description = "Only uploaded posters can be deleted.", tags = [OpenApiConfiguration.TagNames.BOOK_POSTER])
@@ -420,14 +422,23 @@ class BookController(
     @PathVariable(name = "bookId") bookId: String,
     @PathVariable(name = "thumbnailId") thumbnailId: String,
   ) {
-    thumbnailBookRepository.findByIdOrNull(thumbnailId)?.let {
+    findBookThumbnailForRoute(bookId, thumbnailId).let {
       try {
         bookLifecycle.deleteThumbnailForBook(it)
       } catch (e: IllegalArgumentException) {
         throw ResponseStatusException(HttpStatus.BAD_REQUEST, e.message)
       }
-    } ?: throw ResponseStatusException(HttpStatus.NOT_FOUND)
+    }
   }
+
+  private fun findBookThumbnailForRoute(
+    bookId: String,
+    thumbnailId: String,
+  ): ThumbnailBook =
+    thumbnailBookRepository
+      .findByIdOrNull(thumbnailId)
+      ?.takeIf { it.bookId == bookId }
+      ?: throw ResponseStatusException(HttpStatus.NOT_FOUND)
 
   @Operation(summary = "List book pages", tags = [OpenApiConfiguration.TagNames.BOOK_PAGES])
   @GetMapping("api/v1/books/{bookId}/pages")

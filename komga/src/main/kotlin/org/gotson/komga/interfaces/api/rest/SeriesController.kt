@@ -494,6 +494,8 @@ class SeriesController(
   ): ByteArray {
     principal.user.checkContentRestriction(seriesId)
 
+    findSeriesThumbnailForRoute(seriesId, thumbnailId)
+
     return seriesLifecycle.getThumbnailBytesByThumbnailId(thumbnailId)
       ?: throw ResponseStatusException(HttpStatus.NOT_FOUND)
   }
@@ -548,11 +550,10 @@ class SeriesController(
     @PathVariable(name = "seriesId") seriesId: String,
     @PathVariable(name = "thumbnailId") thumbnailId: String,
   ) {
-    seriesRepository.findByIdOrNull(seriesId) ?: throw ResponseStatusException(HttpStatus.NOT_FOUND)
-    thumbnailsSeriesRepository.findByIdOrNull(thumbnailId)?.let {
+    findSeriesThumbnailForRoute(seriesId, thumbnailId).let {
       thumbnailsSeriesRepository.markSelected(it)
       eventPublisher.publishEvent(DomainEvent.ThumbnailSeriesAdded(it.copy(selected = true)))
-    } ?: throw ResponseStatusException(HttpStatus.NOT_FOUND)
+    }
   }
 
   @Operation(summary = "Delete series poster", tags = [OpenApiConfiguration.TagNames.SERIES_POSTER])
@@ -563,15 +564,23 @@ class SeriesController(
     @PathVariable(name = "seriesId") seriesId: String,
     @PathVariable(name = "thumbnailId") thumbnailId: String,
   ) {
-    seriesRepository.findByIdOrNull(seriesId) ?: throw ResponseStatusException(HttpStatus.NOT_FOUND)
-    thumbnailsSeriesRepository.findByIdOrNull(thumbnailId)?.let {
+    findSeriesThumbnailForRoute(seriesId, thumbnailId).let {
       try {
         seriesLifecycle.deleteThumbnailForSeries(it)
       } catch (e: IllegalArgumentException) {
         throw ResponseStatusException(HttpStatus.BAD_REQUEST, e.message)
       }
-    } ?: throw ResponseStatusException(HttpStatus.NOT_FOUND)
+    }
   }
+
+  private fun findSeriesThumbnailForRoute(
+    seriesId: String,
+    thumbnailId: String,
+  ): ThumbnailSeries =
+    thumbnailsSeriesRepository
+      .findByIdOrNull(thumbnailId)
+      ?.takeIf { it.seriesId == seriesId }
+      ?: throw ResponseStatusException(HttpStatus.NOT_FOUND)
 
   @Operation(summary = "List series' books", description = "Use POST /api/v1/books/list instead. Deprecated since 1.19.0.", tags = [OpenApiConfiguration.TagNames.SERIES, OpenApiConfiguration.TagNames.DEPRECATED])
   @Deprecated("use /v1/books/list instead")

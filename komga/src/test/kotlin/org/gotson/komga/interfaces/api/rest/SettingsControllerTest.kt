@@ -53,6 +53,7 @@ class SettingsControllerTest(
     komgaSettingsProvider.deleteEmptyReadLists = false
     komgaSettingsProvider.rememberMeDuration = 5.days
     komgaSettingsProvider.thumbnailSize = ThumbnailSize.LARGE
+    komgaSettingsProvider.thumbnailJpegQuality = 85
     komgaSettingsProvider.taskPoolSize = 4
     komgaSettingsProvider.serverPort = 1234
     komgaSettingsProvider.serverContextPath = "/example"
@@ -65,6 +66,7 @@ class SettingsControllerTest(
         jsonPath("deleteEmptyReadLists") { value(false) }
         jsonPath("rememberMeDurationDays") { value(5) }
         jsonPath("thumbnailSize") { value("LARGE") }
+        jsonPath("thumbnailJpegQuality") { value(85) }
         jsonPath("taskPoolSize") { value(4) }
         jsonPath("serverPort.configurationSource") { value(25600) }
         jsonPath("serverPort.databaseSource") { value(1234) }
@@ -82,6 +84,7 @@ class SettingsControllerTest(
     komgaSettingsProvider.deleteEmptyReadLists = true
     komgaSettingsProvider.rememberMeDuration = 5.days
     komgaSettingsProvider.thumbnailSize = ThumbnailSize.LARGE
+    komgaSettingsProvider.thumbnailJpegQuality = null
     komgaSettingsProvider.taskPoolSize = 4
     komgaSettingsProvider.serverPort = 1234
     komgaSettingsProvider.serverContextPath = "/example"
@@ -96,6 +99,7 @@ class SettingsControllerTest(
         "rememberMeDurationDays": 15,
         "renewRememberMeKey": true,
         "thumbnailSize": "MEDIUM",
+        "thumbnailJpegQuality": 85,
         "taskPoolSize": 8,
         "serverPort": 5678,
         "serverContextPath": "/komga-hyphen/subpath123"
@@ -115,6 +119,7 @@ class SettingsControllerTest(
     assertThat(komgaSettingsProvider.rememberMeDuration).isEqualTo(15.days)
     assertThat(komgaSettingsProvider.rememberMeKey).isNotEqualTo(rememberMeKey)
     assertThat(komgaSettingsProvider.thumbnailSize).isEqualTo(ThumbnailSize.MEDIUM)
+    assertThat(komgaSettingsProvider.thumbnailJpegQuality).isEqualTo(85)
     assertThat(komgaSettingsProvider.taskPoolSize).isEqualTo(8)
     assertThat(komgaSettingsProvider.serverPort).isEqualTo(5678)
     assertThat(komgaSettingsProvider.serverContextPath).isEqualTo("/komga-hyphen/subpath123")
@@ -127,6 +132,7 @@ class SettingsControllerTest(
     komgaSettingsProvider.deleteEmptyReadLists = true
     komgaSettingsProvider.rememberMeDuration = 5.days
     komgaSettingsProvider.thumbnailSize = ThumbnailSize.LARGE
+    komgaSettingsProvider.thumbnailJpegQuality = 85
     komgaSettingsProvider.taskPoolSize = 4
     komgaSettingsProvider.serverPort = 1234
     komgaSettingsProvider.serverContextPath = "/example"
@@ -141,6 +147,7 @@ class SettingsControllerTest(
         "rememberMeDurationDays": null,
         "renewRememberMeKey": null,
         "thumbnailSize": null,
+        "thumbnailJpegQuality": null,
         "taskPoolSize": null,
         "serverPort": null,
         "serverContextPath": null
@@ -160,6 +167,7 @@ class SettingsControllerTest(
     assertThat(komgaSettingsProvider.rememberMeDuration).isEqualTo(5.days)
     assertThat(komgaSettingsProvider.rememberMeKey).isEqualTo(rememberMeKey)
     assertThat(komgaSettingsProvider.thumbnailSize).isEqualTo(ThumbnailSize.LARGE)
+    assertThat(komgaSettingsProvider.thumbnailJpegQuality).isNull()
     assertThat(komgaSettingsProvider.taskPoolSize).isEqualTo(4)
     assertThat(komgaSettingsProvider.serverPort).isNull()
     assertThat(komgaSettingsProvider.serverContextPath).isNull()
@@ -173,6 +181,8 @@ class SettingsControllerTest(
       """{"rememberMeDurationDays": 0}""",
       //language=JSON
       """{"thumbnailSize": "HUGE"}""",
+      """{"thumbnailJpegQuality": 0}""",
+      """{"thumbnailJpegQuality": 101}""",
       """{"taskPoolSize": 0}""",
       """{"serverPort": 0}""",
       """{"serverPort": -5}""",

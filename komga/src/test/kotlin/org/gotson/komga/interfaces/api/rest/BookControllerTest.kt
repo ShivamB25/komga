@@ -3,6 +3,7 @@ package org.gotson.komga.interfaces.api.rest
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.groups.Tuple.tuple
 import org.gotson.komga.domain.model.Author
+import org.gotson.komga.domain.model.Book
 import org.gotson.komga.domain.model.BookPage
 import org.gotson.komga.domain.model.Dimension
 import org.gotson.komga.domain.model.KomgaUser
@@ -45,6 +46,7 @@ import org.springframework.test.web.servlet.MockMvcResultMatchersDsl
 import org.springframework.test.web.servlet.delete
 import org.springframework.test.web.servlet.get
 import org.springframework.test.web.servlet.patch
+import org.springframework.test.web.servlet.put
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
 import java.net.URLEncoder
@@ -649,6 +651,46 @@ class BookControllerTest(
       mockMvc
         .get("/api/v1/books/${book.id}/pages/1")
         .andExpect { status { isNotFound() } }
+    }
+  }
+
+  @Nested
+  inner class BookThumbnailOwnership {
+    @Test
+    @WithMockCustomUser
+    fun `given thumbnail from another book when getting thumbnail by id then returns not found`() {
+      val (book1, book2) = insertTwoBooks()
+      val thumbnail = addUploadedThumbnail(book1.id)
+
+      mockMvc
+        .get("/api/v1/books/${book2.id}/thumbnails/${thumbnail.id}")
+        .andExpect { status { isNotFound() } }
+    }
+
+    @Test
+    @WithMockCustomUser(roles = ["ADMIN"])
+    fun `given thumbnail from another book when selecting thumbnail by id then returns not found`() {
+      val (book1, book2) = insertTwoBooks()
+      val thumbnail = addUploadedThumbnail(book1.id)
+
+      mockMvc
+        .put("/api/v1/books/${book2.id}/thumbnails/${thumbnail.id}/selected")
+        .andExpect { status { isNotFound() } }
+
+      assertThat(bookLifecycle.getThumbnail(book2.id)).isNull()
+    }
+
+    @Test
+    @WithMockCustomUser(roles = ["ADMIN"])
+    fun `given thumbnail from another book when deleting thumbnail by id then returns not found`() {
+      val (book1, book2) = insertTwoBooks()
+      val thumbnail = addUploadedThumbnail(book1.id)
+
+      mockMvc
+        .delete("/api/v1/books/${book2.id}/thumbnails/${thumbnail.id}")
+        .andExpect { status { isNotFound() } }
+
+      assertThat(bookLifecycle.getThumbnailBytesByThumbnailId(thumbnail.id)?.bytes).isEqualTo(byteArrayOf(1, 2, 3))
     }
   }
 
@@ -1459,4 +1501,28 @@ class BookControllerTest(
         header { string("Content-Disposition", containsString(URLEncoder.encode(bookName, StandardCharsets.UTF_8.name()))) }
       }
   }
+
+  private fun insertTwoBooks(): Pair<Book, Book> {
+    val book1 = makeBook("1.cbr", libraryId = library.id)
+    val book2 = makeBook("2.cbr", libraryId = library.id)
+    makeSeries(name = "series", libraryId = library.id).let { series ->
+      seriesLifecycle.createSeries(series).let { created ->
+        seriesLifecycle.addBooks(created, listOf(book1, book2))
+      }
+    }
+    return bookRepository.findAll().sortedBy { it.name }.let { it[0] to it[1] }
+  }
+
+  private fun addUploadedThumbnail(bookId: String): ThumbnailBook =
+    bookLifecycle.addThumbnailForBook(
+      ThumbnailBook(
+        thumbnail = byteArrayOf(1, 2, 3),
+        bookId = bookId,
+        type = ThumbnailBook.Type.USER_UPLOADED,
+        fileSize = 3,
+        mediaType = "image/jpeg",
+        dimension = Dimension(1, 1),
+      ),
+      MarkSelectedPreference.YES,
+    )
 }

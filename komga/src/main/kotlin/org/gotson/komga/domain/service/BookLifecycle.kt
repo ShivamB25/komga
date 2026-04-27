@@ -20,6 +20,7 @@ import org.gotson.komga.domain.model.SearchCondition
 import org.gotson.komga.domain.model.SearchContext
 import org.gotson.komga.domain.model.SearchOperator
 import org.gotson.komga.domain.model.ThumbnailBook
+import org.gotson.komga.domain.model.ThumbnailGenerationProfile
 import org.gotson.komga.domain.model.TypedBytes
 import org.gotson.komga.domain.persistence.BookMetadataRepository
 import org.gotson.komga.domain.persistence.BookRepository
@@ -34,6 +35,7 @@ import org.gotson.komga.infrastructure.hash.Hasher
 import org.gotson.komga.infrastructure.hash.KoreaderHasher
 import org.gotson.komga.infrastructure.image.ImageConverter
 import org.gotson.komga.infrastructure.image.ImageType
+import org.gotson.komga.infrastructure.image.ThumbnailContentStorage
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.context.ApplicationEventPublisher
 import org.springframework.data.domain.Pageable
@@ -70,6 +72,7 @@ class BookLifecycle(
   private val hasherKoreader: KoreaderHasher,
   private val historicalEventRepository: HistoricalEventRepository,
   private val komgaSettingsProvider: KomgaSettingsProvider,
+  private val thumbnailContentStorage: ThumbnailContentStorage,
   @Qualifier("pdfImageType")
   private val pdfImageType: ImageType,
 ) {
@@ -154,9 +157,12 @@ class BookLifecycle(
   ): ThumbnailBook {
     when (thumbnail.type) {
       ThumbnailBook.Type.GENERATED -> {
+        val storedThumbnail = thumbnailContentStorage.storeGenerated(thumbnail)
+        val previousGeneratedThumbnails = thumbnailBookRepository.findAllByBookIdAndType(thumbnail.bookId, setOf(ThumbnailBook.Type.GENERATED))
         // only one generated thumbnail is allowed
         thumbnailBookRepository.deleteByBookIdAndType(thumbnail.bookId, ThumbnailBook.Type.GENERATED)
-        thumbnailBookRepository.insert(thumbnail.copy(selected = false))
+        previousGeneratedThumbnails.forEach { thumbnailContentStorage.delete(it) }
+        thumbnailBookRepository.insert(storedThumbnail.copy(selected = false))
       }
 
       ThumbnailBook.Type.SIDECAR -> {
@@ -191,7 +197,11 @@ class BookLifecycle(
     else
       thumbnailsHouseKeeping(thumbnail.bookId)
 
-    val newThumbnail = thumbnail.copy(selected = selected)
+    val newThumbnail =
+      if (thumbnail.type == ThumbnailBook.Type.GENERATED)
+        thumbnailBookRepository.findByIdOrNull(thumbnail.id)?.copy(selected = selected) ?: thumbnail.copy(selected = selected)
+      else
+        thumbnail.copy(selected = selected)
     eventPublisher.publishEvent(DomainEvent.ThumbnailBookAdded(newThumbnail))
     return newThumbnail
   }
@@ -206,7 +216,9 @@ class BookLifecycle(
   fun getThumbnail(bookId: String): ThumbnailBook? {
     val selected = thumbnailBookRepository.findSelectedByBookIdOrNull(bookId)
 
-    if (selected == null || !selected.exists()) {
+    if (selected == null || !thumbnailContentStorage.exists(selected)) {
+      if (selected?.type == ThumbnailBook.Type.GENERATED)
+        regenerateMissingGeneratedThumbnail(bookId)
       thumbnailsHouseKeeping(bookId)
       return thumbnailBookRepository.findSelectedByBookIdOrNull(bookId)
     }
@@ -222,9 +234,10 @@ class BookLifecycle(
       val thumbnailBytes =
         when {
           it.thumbnail != null -> it.thumbnail
+          it.type == ThumbnailBook.Type.GENERATED -> thumbnailContentStorage.read(it)
           it.url != null -> File(it.url.toURI()).readBytes()
           else -> return null
-        }
+        } ?: return null
 
       if (resizeTo != null) {
         try {
@@ -263,6 +276,7 @@ class BookLifecycle(
   private fun getBytesFromThumbnailBook(thumbnail: ThumbnailBook): ByteArray? =
     when {
       thumbnail.thumbnail != null -> thumbnail.thumbnail
+      thumbnail.type == ThumbnailBook.Type.GENERATED -> thumbnailContentStorage.read(thumbnail)
       thumbnail.url != null -> File(thumbnail.url.toURI()).readBytes()
       else -> null
     }
@@ -273,7 +287,7 @@ class BookLifecycle(
       thumbnailBookRepository
         .findAllByBookId(bookId)
         .mapNotNull {
-          if (!it.exists()) {
+          if (!thumbnailContentStorage.exists(it)) {
             logger.warn { "Thumbnail doesn't exist, removing entry" }
             thumbnailBookRepository.delete(it.id)
             null
@@ -298,10 +312,62 @@ class BookLifecycle(
 
   fun findBookThumbnailsToRegenerate(forBiggerResultOnly: Boolean): Collection<String> =
     if (forBiggerResultOnly) {
-      thumbnailBookRepository.findAllBookIdsByThumbnailTypeAndDimensionSmallerThan(ThumbnailBook.Type.GENERATED, komgaSettingsProvider.thumbnailSize.maxEdge)
+      thumbnailBookRepository.findAllBookIdsByStaleGeneratedProfile(currentThumbnailGenerationProfile())
     } else {
       bookRepository.findAll(SearchCondition.Deleted(SearchOperator.IsFalse), SearchContext.empty(), Pageable.unpaged()).content.map { it.id }
     }
+
+  fun migrateGeneratedThumbnailStorage(): Int =
+    thumbnailBookRepository
+      .findAllByType(setOf(ThumbnailBook.Type.GENERATED))
+      .mapNotNull { migrateGeneratedThumbnailStorage(it) }
+      .size
+
+  fun migrateGeneratedThumbnailStorageForBook(bookId: String): ThumbnailBook? =
+    thumbnailBookRepository
+      .findAllByBookIdAndType(bookId, setOf(ThumbnailBook.Type.GENERATED))
+      .firstOrNull()
+      ?.let { migrateGeneratedThumbnailStorage(it) }
+
+  fun cleanupOrphanedGeneratedThumbnailFiles(): Int =
+    thumbnailContentStorage.cleanupOrphanedGeneratedFiles(
+      thumbnailBookRepository
+        .findAllByType(setOf(ThumbnailBook.Type.GENERATED))
+        .mapNotNull { it.url?.toString() },
+    )
+
+  private fun regenerateMissingGeneratedThumbnail(bookId: String) {
+    val book = bookRepository.findByIdOrNull(bookId) ?: return
+    generateThumbnailAndPersist(book)
+  }
+
+  private fun migrateGeneratedThumbnailStorage(thumbnail: ThumbnailBook): ThumbnailBook? {
+    val currentStorageMode = thumbnail.generationProfile?.storageMode ?: ThumbnailGenerationProfile.StorageMode.DATABASE
+    if (currentStorageMode == thumbnailContentStorage.generatedStorageMode) return null
+
+    val bytes = getBytesFromThumbnailBook(thumbnail) ?: return null
+    val migrated =
+      thumbnailContentStorage.storeGenerated(
+        thumbnail.copy(
+          thumbnail = bytes,
+          url = null,
+          generationProfile =
+            (thumbnail.generationProfile ?: currentThumbnailGenerationProfile())
+              .copy(storageMode = thumbnailContentStorage.generatedStorageMode),
+        ),
+      )
+    thumbnailBookRepository.update(migrated)
+    if (thumbnail.url != migrated.url) thumbnailContentStorage.delete(thumbnail)
+    return migrated
+  }
+
+  private fun currentThumbnailGenerationProfile(): ThumbnailGenerationProfile =
+    ThumbnailGenerationProfile(
+      format = resizeTargetFormat.mediaType,
+      targetSize = komgaSettingsProvider.thumbnailSize.maxEdge,
+      jpegQuality = komgaSettingsProvider.thumbnailJpegQuality,
+      storageMode = thumbnailContentStorage.generatedStorageMode,
+    )
 
   @Throws(
     ImageConversionException::class,
@@ -362,6 +428,7 @@ class BookLifecycle(
 
   fun deleteOne(book: Book) {
     logger.info { "Delete book id: ${book.id}" }
+    val thumbnails = thumbnailBookRepository.findAllByBookId(book.id)
 
     transactionTemplate.executeWithoutResult {
       readProgressRepository.deleteByBookId(book.id)
@@ -374,6 +441,7 @@ class BookLifecycle(
       bookRepository.delete(book.id)
     }
 
+    thumbnails.forEach { thumbnailContentStorage.delete(it) }
     eventPublisher.publishEvent(DomainEvent.BookDeleted(book))
   }
 
@@ -388,6 +456,7 @@ class BookLifecycle(
   fun deleteMany(books: Collection<Book>) {
     val bookIds = books.map { it.id }
     logger.info { "Delete book ids: $bookIds" }
+    val thumbnails = bookIds.flatMap { thumbnailBookRepository.findAllByBookId(it) }
 
     transactionTemplate.executeWithoutResult {
       readProgressRepository.deleteByBookIds(bookIds)
@@ -400,6 +469,7 @@ class BookLifecycle(
       bookRepository.delete(bookIds)
     }
 
+    thumbnails.forEach { thumbnailContentStorage.delete(it) }
     books.forEach { eventPublisher.publishEvent(DomainEvent.BookDeleted(it)) }
   }
 

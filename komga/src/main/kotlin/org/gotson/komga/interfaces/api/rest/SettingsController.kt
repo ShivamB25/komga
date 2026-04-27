@@ -44,6 +44,7 @@ class SettingsController(
       komgaSettingsProvider.deleteEmptyReadLists,
       komgaSettingsProvider.rememberMeDuration.inWholeDays,
       komgaSettingsProvider.thumbnailSize.toDto(),
+      komgaSettingsProvider.thumbnailJpegQuality,
       komgaSettingsProvider.taskPoolSize,
       SettingMultiSource(configServerPort, komgaSettingsProvider.serverPort, serverSettings.effectiveServerPort),
       SettingMultiSource(configServerContextPath, komgaSettingsProvider.serverContextPath, serverSettings.effectiveServletContextPath),
@@ -65,6 +66,7 @@ class SettingsController(
     newSettings.rememberMeDurationDays?.let { komgaSettingsProvider.rememberMeDuration = it.days }
     if (newSettings.renewRememberMeKey == true) komgaSettingsProvider.renewRememberMeKey()
     newSettings.thumbnailSize?.let { komgaSettingsProvider.thumbnailSize = it.toDomain() }
+    if (newSettings.isSet("thumbnailJpegQuality")) komgaSettingsProvider.thumbnailJpegQuality = newSettings.thumbnailJpegQuality
     newSettings.taskPoolSize?.let { komgaSettingsProvider.taskPoolSize = it }
 
     if (newSettings.isSet("serverPort")) komgaSettingsProvider.serverPort = newSettings.serverPort

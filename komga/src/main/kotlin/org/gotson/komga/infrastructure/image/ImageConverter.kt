@@ -94,8 +94,9 @@ class ImageConverter(
     imageBytes: ByteArray,
     format: ImageType,
     size: Int,
+    jpegQuality: Int? = null,
   ): ByteArray {
-    val builder = resizeImageBuilder(imageBytes, format, size) ?: return imageBytes
+    val builder = resizeImageBuilder(imageBytes, format, size, jpegQuality) ?: return imageBytes
 
     return ByteArrayOutputStream().use {
       builder.toOutputStream(it)
@@ -117,6 +118,7 @@ class ImageConverter(
     imageBytes: ByteArray,
     format: ImageType,
     size: Int,
+    jpegQuality: Int? = null,
   ): Thumbnails.Builder<out InputStream>? {
     val longestEdge =
       imageAnalyzer.getDimension(imageBytes.inputStream())?.let {
@@ -135,6 +137,10 @@ class ImageConverter(
       .size(resizeTo, resizeTo)
       .imageType(BufferedImage.TYPE_INT_ARGB)
       .outputFormat(format.imageIOFormat)
+      .apply {
+        if (format == ImageType.JPEG && jpegQuality != null)
+          outputQuality(jpegQuality / 100.0)
+      }
   }
 
   private fun containsAlphaChannel(image: BufferedImage): Boolean = image.colorModel.hasAlpha()

@@ -57,6 +57,19 @@ class KomgaSettingsProvider(
       field = value
     }
 
+  var thumbnailJpegQuality: Int? =
+    serverSettingsDao
+      .getSettingByKey(Settings.THUMBNAIL_JPEG_QUALITY.name, Int::class.java)
+      ?.validateThumbnailJpegQuality()
+    set(value) {
+      value?.validateThumbnailJpegQuality()
+      if (value != null)
+        serverSettingsDao.saveSetting(Settings.THUMBNAIL_JPEG_QUALITY.name, value)
+      else
+        serverSettingsDao.deleteSetting(Settings.THUMBNAIL_JPEG_QUALITY.name)
+      field = value
+    }
+
   var taskPoolSize: Int =
     serverSettingsDao.getSettingByKey(Settings.TASK_POOL_SIZE.name, Int::class.java) ?: 1
     set(value) {
@@ -120,10 +133,16 @@ private enum class Settings {
   REMEMBER_ME_KEY,
   REMEMBER_ME_DURATION,
   THUMBNAIL_SIZE,
+  THUMBNAIL_JPEG_QUALITY,
   TASK_POOL_SIZE,
   SERVER_PORT,
   SERVER_CONTEXT_PATH,
   KOBO_PROXY,
   KOBO_PORT,
   KEPUBIFY_PATH,
+}
+
+private fun Int.validateThumbnailJpegQuality(): Int {
+  require(this in 1..100) { "Thumbnail JPEG quality must be between 1 and 100" }
+  return this
 }

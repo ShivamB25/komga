@@ -5,6 +5,7 @@ data class SettingsDto(
   val deleteEmptyReadLists: Boolean,
   val rememberMeDurationDays: Long,
   val thumbnailSize: ThumbnailSizeDto,
+  val thumbnailJpegQuality: Int?,
   val taskPoolSize: Int,
   val serverPort: SettingMultiSource<Int?>,
   val serverContextPath: SettingMultiSource<String?>,

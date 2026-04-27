@@ -46,6 +46,8 @@ class KomgaProperties {
 
   var configDir: String? = null
 
+  var thumbnails = Thumbnails()
+
   var kobo = Kobo()
 
   val fonts = Fonts()
@@ -100,6 +102,22 @@ class KomgaProperties {
 
       var preserveOriginal: Boolean = true
     }
+  }
+
+  class Thumbnails {
+    var storage = Storage()
+
+    class Storage {
+      var mode: ThumbnailStorageMode = ThumbnailStorageMode.DATABASE
+
+      var directory: String? = null
+    }
+  }
+
+  enum class ThumbnailStorageMode {
+    DATABASE,
+    FILESYSTEM,
+    HYBRID,
   }
 
   class Kobo {

@@ -1,6 +1,7 @@
 package org.gotson.komga.interfaces.api.rest.dto
 
 import jakarta.validation.constraints.Max
+import jakarta.validation.constraints.Min
 import jakarta.validation.constraints.Pattern
 import jakarta.validation.constraints.Positive
 import kotlin.properties.Delegates
@@ -20,6 +21,13 @@ class SettingsUpdateDto {
   var renewRememberMeKey: Boolean? = null
 
   var thumbnailSize: ThumbnailSizeDto? = null
+
+  @get:Min(1)
+  @get:Max(100)
+  var thumbnailJpegQuality: Int?
+    by Delegates.observable(null) { prop, _, _ ->
+      isSet[prop.name] = true
+    }
 
   @get:Positive
   var taskPoolSize: Int? = null

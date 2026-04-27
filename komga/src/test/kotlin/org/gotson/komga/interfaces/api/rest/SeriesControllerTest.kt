@@ -10,6 +10,7 @@ import org.gotson.komga.domain.model.MarkSelectedPreference
 import org.gotson.komga.domain.model.Media
 import org.gotson.komga.domain.model.SeriesMetadata
 import org.gotson.komga.domain.model.ThumbnailBook
+import org.gotson.komga.domain.model.ThumbnailSeries
 import org.gotson.komga.domain.model.makeBook
 import org.gotson.komga.domain.model.makeLibrary
 import org.gotson.komga.domain.model.makeSeries
@@ -20,6 +21,7 @@ import org.gotson.komga.domain.persistence.LibraryRepository
 import org.gotson.komga.domain.persistence.MediaRepository
 import org.gotson.komga.domain.persistence.SeriesMetadataRepository
 import org.gotson.komga.domain.persistence.SeriesRepository
+import org.gotson.komga.domain.persistence.ThumbnailSeriesRepository
 import org.gotson.komga.domain.service.BookLifecycle
 import org.gotson.komga.domain.service.FileSystemScanner
 import org.gotson.komga.domain.service.KomgaUserLifecycle
@@ -47,6 +49,7 @@ import org.springframework.test.web.servlet.delete
 import org.springframework.test.web.servlet.get
 import org.springframework.test.web.servlet.patch
 import org.springframework.test.web.servlet.post
+import org.springframework.test.web.servlet.put
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
@@ -67,6 +70,7 @@ class SeriesControllerTest(
   @Autowired private val bookMetadataRepository: BookMetadataRepository,
   @Autowired private val userRepository: KomgaUserRepository,
   @Autowired private val userLifecycle: KomgaUserLifecycle,
+  @Autowired private val thumbnailSeriesRepository: ThumbnailSeriesRepository,
   @Autowired private val mockMvc: MockMvc,
 ) {
   @MockkBean
@@ -682,6 +686,66 @@ class SeriesControllerTest(
         .get("/api/v1/series/${createdSeries.id}/thumbnail")
         .andExpect { status { isNotFound() } }
     }
+  }
+
+  @Nested
+  inner class SeriesThumbnailOwnership {
+    @Test
+    @WithMockCustomUser
+    fun `given thumbnail from another series when getting thumbnail by id then returns not found`() {
+      val (series1, series2) = insertTwoSeries()
+      val thumbnail = addUploadedThumbnail(series1.id)
+
+      mockMvc
+        .get("/api/v1/series/${series2.id}/thumbnails/${thumbnail.id}")
+        .andExpect { status { isNotFound() } }
+    }
+
+    @Test
+    @WithMockCustomUser(roles = ["ADMIN"])
+    fun `given thumbnail from another series when selecting thumbnail by id then returns not found`() {
+      val (series1, series2) = insertTwoSeries()
+      val thumbnail = addUploadedThumbnail(series1.id)
+
+      mockMvc
+        .put("/api/v1/series/${series2.id}/thumbnails/${thumbnail.id}/selected")
+        .andExpect { status { isNotFound() } }
+
+      assertThat(thumbnailSeriesRepository.findByIdOrNull(thumbnail.id)?.selected).isFalse()
+      assertThat(seriesLifecycle.getSelectedThumbnail(series2.id)).isNull()
+    }
+
+    @Test
+    @WithMockCustomUser(roles = ["ADMIN"])
+    fun `given thumbnail from another series when deleting thumbnail by id then returns not found`() {
+      val (series1, series2) = insertTwoSeries()
+      val thumbnail = addUploadedThumbnail(series1.id)
+
+      mockMvc
+        .delete("/api/v1/series/${series2.id}/thumbnails/${thumbnail.id}")
+        .andExpect { status { isNotFound() } }
+
+      assertThat(seriesLifecycle.getThumbnailBytesByThumbnailId(thumbnail.id)).isEqualTo(byteArrayOf(1, 2, 3))
+    }
+
+    private fun insertTwoSeries() =
+      Pair(
+        seriesLifecycle.createSeries(makeSeries(name = "series 1", libraryId = library.id)),
+        seriesLifecycle.createSeries(makeSeries(name = "series 2", libraryId = library.id)),
+      )
+
+    private fun addUploadedThumbnail(seriesId: String): ThumbnailSeries =
+      seriesLifecycle.addThumbnailForSeries(
+        ThumbnailSeries(
+          thumbnail = byteArrayOf(1, 2, 3),
+          seriesId = seriesId,
+          type = ThumbnailSeries.Type.USER_UPLOADED,
+          fileSize = 3,
+          mediaType = "image/jpeg",
+          dimension = Dimension(1, 1),
+        ),
+        MarkSelectedPreference.NO,
+      )
   }
 
   @Nested

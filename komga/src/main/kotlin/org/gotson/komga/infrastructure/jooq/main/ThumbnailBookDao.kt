@@ -1,7 +1,10 @@
 package org.gotson.komga.infrastructure.jooq.main
 
+import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.module.kotlin.readValue
 import org.gotson.komga.domain.model.Dimension
 import org.gotson.komga.domain.model.ThumbnailBook
+import org.gotson.komga.domain.model.ThumbnailGenerationProfile
 import org.gotson.komga.domain.persistence.ThumbnailBookRepository
 import org.gotson.komga.infrastructure.jooq.SplitDslDaoBase
 import org.gotson.komga.infrastructure.jooq.TempTable.Companion.withTempTable
@@ -19,6 +22,7 @@ class ThumbnailBookDao(
   dslRW: DSLContext,
   @Qualifier("dslContextRO") dslRO: DSLContext,
   @param:Value("#{@komgaProperties.database.batchChunkSize}") private val batchSize: Int,
+  private val mapper: ObjectMapper,
 ) : SplitDslDaoBase(dslRW, dslRO),
   ThumbnailBookRepository {
   private val tb = Tables.THUMBNAIL_BOOK
@@ -38,6 +42,13 @@ class ThumbnailBookDao(
       .selectFrom(tb)
       .where(tb.BOOK_ID.eq(bookId))
       .and(tb.TYPE.`in`(type.map { it.name }))
+      .fetchInto(tb)
+      .map { it.toDomain() }
+
+  override fun findAllByType(type: Set<ThumbnailBook.Type>): Collection<ThumbnailBook> =
+    dslRO
+      .selectFrom(tb)
+      .where(tb.TYPE.`in`(type.map { it.name }))
       .fetchInto(tb)
       .map { it.toDomain() }
 
@@ -70,6 +81,19 @@ class ThumbnailBookDao(
       .and(tb.HEIGHT.lt(size))
       .fetch(tb.BOOK_ID)
 
+  override fun findAllBookIdsByStaleGeneratedProfile(profile: ThumbnailGenerationProfile): Collection<String> {
+    val serializedProfile = mapper.writeValueAsString(profile)
+    return dslRO
+      .select(tb.BOOK_ID)
+      .from(tb)
+      .where(tb.TYPE.eq(ThumbnailBook.Type.GENERATED.toString()))
+      .and(
+        tb.GENERATION_PROFILE.isNull
+          .or(tb.GENERATION_PROFILE.ne(serializedProfile))
+          .or(tb.WIDTH.lt(profile.targetSize).and(tb.HEIGHT.lt(profile.targetSize))),
+      ).fetch(tb.BOOK_ID)
+  }
+
   override fun existsById(thumbnailId: String): Boolean = dslRO.fetchExists(tb, tb.ID.eq(thumbnailId))
 
   override fun insert(thumbnail: ThumbnailBook) {
@@ -85,6 +109,7 @@ class ThumbnailBookDao(
       .set(tb.WIDTH, thumbnail.dimension.width)
       .set(tb.HEIGHT, thumbnail.dimension.height)
       .set(tb.FILE_SIZE, thumbnail.fileSize)
+      .set(tb.GENERATION_PROFILE, thumbnail.generationProfile?.let { mapper.writeValueAsString(it) })
       .execute()
   }
 
@@ -100,6 +125,7 @@ class ThumbnailBookDao(
       .set(tb.WIDTH, thumbnail.dimension.width)
       .set(tb.HEIGHT, thumbnail.dimension.height)
       .set(tb.FILE_SIZE, thumbnail.fileSize)
+      .set(tb.GENERATION_PROFILE, thumbnail.generationProfile?.let { mapper.writeValueAsString(it) })
       .where(tb.ID.eq(thumbnail.id))
       .execute()
   }
@@ -156,6 +182,7 @@ class ThumbnailBookDao(
       mediaType = mediaType,
       fileSize = fileSize,
       dimension = Dimension(width, height),
+      generationProfile = generationProfile?.let { mapper.readValue<ThumbnailGenerationProfile>(it) },
       id = id,
       bookId = bookId,
       createdDate = createdDate,

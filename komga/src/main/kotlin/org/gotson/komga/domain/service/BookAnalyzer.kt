@@ -14,6 +14,7 @@ import org.gotson.komga.domain.model.MediaType
 import org.gotson.komga.domain.model.MediaUnsupportedException
 import org.gotson.komga.domain.model.NoThumbnailFoundException
 import org.gotson.komga.domain.model.ThumbnailBook
+import org.gotson.komga.domain.model.ThumbnailGenerationProfile
 import org.gotson.komga.domain.model.TypedBytes
 import org.gotson.komga.infrastructure.configuration.KomgaSettingsProvider
 import org.gotson.komga.infrastructure.hash.Hasher
@@ -251,7 +252,12 @@ class BookAnalyzer(
 
     val thumbnail =
       getPoster(book)?.let { cover ->
-        imageConverter.resizeImageToByteArray(cover.bytes, thumbnailType, komgaSettingsProvider.thumbnailSize.maxEdge)
+        imageConverter.resizeImageToByteArray(
+          cover.bytes,
+          thumbnailType,
+          komgaSettingsProvider.thumbnailSize.maxEdge,
+          komgaSettingsProvider.thumbnailJpegQuality,
+        )
       } ?: throw NoThumbnailFoundException()
 
     return ThumbnailBook(
@@ -261,6 +267,12 @@ class BookAnalyzer(
       mediaType = thumbnailType.mediaType,
       dimension = imageAnalyzer.getDimension(thumbnail.inputStream()) ?: Dimension(0, 0),
       fileSize = thumbnail.size.toLong(),
+      generationProfile =
+        ThumbnailGenerationProfile(
+          format = thumbnailType.mediaType,
+          targetSize = komgaSettingsProvider.thumbnailSize.maxEdge,
+          jpegQuality = komgaSettingsProvider.thumbnailJpegQuality,
+        ),
     )
   }
 
