@@ -130,6 +130,40 @@ class ReadListControllerTest(
     }
 
     @Test
+    @WithMockCustomUser
+    fun `given search term when getting read lists then matching results are returned`() {
+      makeReadLists()
+
+      mockMvc
+        .get("/api/v1/readlists?search=Lib1&unpaged=true")
+        .andExpect {
+          status { isOk() }
+          content { contentTypeCompatibleWith(MediaType.APPLICATION_JSON) }
+          jsonPath("$.totalElements") { value(2) }
+          jsonPath("$.content[?(@.name == 'Lib1')].id") { value(rlLib1.id) }
+          jsonPath("$.content[?(@.name == 'Lib1+2')].id") { value(rlLibBoth.id) }
+        }
+    }
+
+    @Test
+    @WithMockCustomUser(sharedAllLibraries = false, sharedLibraries = ["1"])
+    fun `given search term and restricted library access when getting read lists then only authorized results are returned`() {
+      makeReadLists()
+
+      mockMvc
+        .get("/api/v1/readlists?search=Lib&unpaged=true")
+        .andExpect {
+          status { isOk() }
+          content { contentTypeCompatibleWith(MediaType.APPLICATION_JSON) }
+          jsonPath("$.totalElements") { value(2) }
+          jsonPath("$.content[?(@.name == 'Lib1')].id") { value(rlLib1.id) }
+          jsonPath("$.content[?(@.name == 'Lib1')].filtered") { value(false) }
+          jsonPath("$.content[?(@.name == 'Lib1+2')].id") { value(rlLibBoth.id) }
+          jsonPath("$.content[?(@.name == 'Lib1+2')].filtered") { value(true) }
+        }
+    }
+
+    @Test
     @WithMockCustomUser(sharedAllLibraries = false, sharedLibraries = ["1"])
     fun `given user with access to a single library when getting read lists then only get read lists from this library`() {
       makeReadLists()

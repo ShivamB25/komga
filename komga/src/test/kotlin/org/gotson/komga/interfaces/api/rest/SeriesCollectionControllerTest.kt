@@ -119,6 +119,23 @@ class SeriesCollectionControllerTest(
     }
 
     @Test
+    @WithMockCustomUser
+    fun `given search term when getting collections then relevance ordered results are returned`() {
+      makeCollections()
+
+      mockMvc
+        .get("/api/v1/collections?search=Lib1&unpaged=true")
+        .andExpect {
+          status { isOk() }
+          jsonPath("$.totalElements") { value(2) }
+          jsonPath("$.content[0].id") { value(colLib1.id) }
+          jsonPath("$.content[1].id") { value(colLibBoth.id) }
+          jsonPath("$.content[?(@.name == 'Lib1')].id") { value(colLib1.id) }
+          jsonPath("$.content[?(@.name == 'Lib1+2')].id") { value(colLibBoth.id) }
+        }
+    }
+
+    @Test
     @WithMockCustomUser(sharedAllLibraries = false, sharedLibraries = ["1"])
     fun `given user with access to a single library when getting collections then only get collections from this library`() {
       makeCollections()

@@ -16,8 +16,10 @@ import org.gotson.komga.jooq.main.Tables
 import org.gotson.komga.jooq.main.tables.records.CollectionRecord
 import org.gotson.komga.language.toCurrentTimeZone
 import org.jooq.DSLContext
+import org.jooq.Field
 import org.jooq.Record
 import org.jooq.ResultQuery
+import org.jooq.impl.DSL
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.data.domain.Page
@@ -29,6 +31,8 @@ import org.springframework.stereotype.Component
 import org.springframework.transaction.annotation.Transactional
 import java.time.LocalDateTime
 import java.time.ZoneId
+
+private const val RELEVANCE_SORT_ALIAS = "relevance_sort"
 
 @Component
 class SeriesCollectionDao(
@@ -98,17 +102,25 @@ class SeriesCollectionDao(
       else
         dslRO.fetchCount(c, searchCondition)
 
+    val extraSelectFields = mutableListOf<Field<*>>()
     val orderBy =
       pageable.sort.mapNotNull {
-        if (it.property == "relevance" && !collectionIds.isNullOrEmpty())
-          c.ID.sortByValues(collectionIds, it.isAscending)
-        else
+        if (it.property == "relevance" && !collectionIds.isNullOrEmpty()) {
+          c.ID.sortByValues(collectionIds, it.isAscending).`as`(RELEVANCE_SORT_ALIAS).also { field ->
+            extraSelectFields += field
+          }
+          DSL.field(DSL.name(RELEVANCE_SORT_ALIAS), Int::class.java).asc()
+        } else {
+          sorts[it.property]?.let { field ->
+            extraSelectFields += field
+          }
           it.toSortField(sorts)
+        }
       }
 
     val items =
       dslRO
-        .selectBase(restrictions.isRestricted)
+        .selectBase(restrictions.isRestricted, extraSelectFields)
         .where(conditions)
         .apply { if (queryIds != null) and(c.ID.`in`(queryIds)) }
         .orderBy(orderBy)
@@ -171,15 +183,17 @@ class SeriesCollectionDao(
       .fetchAndMap(dslRO, null)
       .firstOrNull()
 
-  private fun DSLContext.selectBase(joinOnSeriesMetadata: Boolean = false) =
-    this
-      .selectDistinct(*c.fields())
-      .from(c)
-      .leftJoin(cs)
-      .on(c.ID.eq(cs.COLLECTION_ID))
-      .leftJoin(s)
-      .on(cs.SERIES_ID.eq(s.ID))
-      .apply { if (joinOnSeriesMetadata) leftJoin(sd).on(cs.SERIES_ID.eq(sd.SERIES_ID)) }
+  private fun DSLContext.selectBase(
+    joinOnSeriesMetadata: Boolean = false,
+    extraSelectFields: Collection<Field<*>> = emptyList(),
+  ) = this
+    .selectDistinct(*(c.fields().toList() + extraSelectFields).toTypedArray())
+    .from(c)
+    .leftJoin(cs)
+    .on(c.ID.eq(cs.COLLECTION_ID))
+    .leftJoin(s)
+    .on(cs.SERIES_ID.eq(s.ID))
+    .apply { if (joinOnSeriesMetadata) leftJoin(sd).on(cs.SERIES_ID.eq(sd.SERIES_ID)) }
 
   private fun ResultQuery<Record>.fetchAndMap(
     dsl: DSLContext,
