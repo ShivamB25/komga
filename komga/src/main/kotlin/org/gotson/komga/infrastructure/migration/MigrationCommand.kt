@@ -39,8 +39,11 @@ object MigrationCommand {
     Offline Komga SQLite-to-PostgreSQL migration command.
 
     Usage:
-      preflight --source-main=<jdbc:sqlite:main> --source-tasks=<jdbc:sqlite:tasks> --target=<jdbc:postgresql://...> --target-user=<user> --target-password=<password> [--report=<file>] [--resume]
-      migrate   --source-main=<jdbc:sqlite:main> --source-tasks=<jdbc:sqlite:tasks> --target=<jdbc:postgresql://...> --target-user=<user> --target-password=<password> [--report=<file>] [--resume]
+      preflight --source-config-dir=<dir> --target=<jdbc:postgresql://...> --target-user=<user> --target-password=<password> [--source-main=<jdbc:sqlite:main>] [--source-tasks=<jdbc:sqlite:tasks>] [--report=<file>] [--resume]
+      migrate   --source-config-dir=<dir> --target=<jdbc:postgresql://...> --target-user=<user> --target-password=<password> [--source-main=<jdbc:sqlite:main>] [--source-tasks=<jdbc:sqlite:tasks>] [--report=<file>] [--resume]
+
+    --source-config-dir infers database.sqlite and tasks.sqlite from the given Komga config directory.
+    Use --source-main and --source-tasks directly for custom SQLite database locations.
 
     This command is explicit and offline. It does not start the HTTP server, schedulers, task processors, scanners, SSE, or search lifecycle.
     """.trimIndent()
@@ -69,9 +72,16 @@ object MigrationCommand {
           key to value
         }
 
+    val sourceConfigDir = options["source-config-dir"]?.takeIf { it.isNotBlank() }
+    val sourceMain = options["source-main"]?.takeIf { it.isNotBlank() } ?: sourceConfigDir?.let { sourceJdbcUrl(it, "database.sqlite") }
+    val sourceTasks = options["source-tasks"]?.takeIf { it.isNotBlank() } ?: sourceConfigDir?.let { sourceJdbcUrl(it, "tasks.sqlite") }
+
     val missing =
-      listOf("source-main", "source-tasks", "target")
-        .filter { options[it].isNullOrBlank() }
+      buildList {
+        if (sourceMain.isNullOrBlank()) add("source-main")
+        if (sourceTasks.isNullOrBlank()) add("source-tasks")
+        if (options["target"].isNullOrBlank()) add("target")
+      }
 
     if (missing.isNotEmpty()) {
       return ParsedCommand(
@@ -84,8 +94,8 @@ object MigrationCommand {
       mode = mode,
       request =
         MigrationRequest(
-          sourceMain = JdbcEndpoint(options.getValue("source-main")),
-          sourceTasks = JdbcEndpoint(options.getValue("source-tasks")),
+          sourceMain = JdbcEndpoint(sourceMain!!),
+          sourceTasks = JdbcEndpoint(sourceTasks!!),
           target =
             JdbcEndpoint(
               url = options.getValue("target"),
@@ -105,6 +115,11 @@ object MigrationCommand {
     val reportPath: String? = null,
     val argumentError: String? = null,
   )
+
+  private fun sourceJdbcUrl(
+    sourceConfigDir: String,
+    fileName: String,
+  ): String = "jdbc:sqlite:${Path(sourceConfigDir).resolve(fileName)}"
 }
 
 fun main(args: Array<String>) {

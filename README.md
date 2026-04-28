@@ -64,16 +64,18 @@ Stop the normal Komga process or container before migrating. Use the same Komga 
 For a built jar, invoke the migration command through Spring Boot's `PropertiesLauncher`:
 
 ```sh
-java -Dloader.main=org.gotson.komga.infrastructure.migration.MigrationCommandKt -cp komga/build/libs/komga-1.24.4.jar org.springframework.boot.loader.launch.PropertiesLauncher preflight --source-main=jdbc:sqlite:/path/to/config/database.sqlite --source-tasks=jdbc:sqlite:/path/to/config/tasks.sqlite --target=jdbc:postgresql://localhost:5432/komga --target-user=komga --target-password=change-me --report=/path/to/config/migration-preflight.json
-java -Dloader.main=org.gotson.komga.infrastructure.migration.MigrationCommandKt -cp komga/build/libs/komga-1.24.4.jar org.springframework.boot.loader.launch.PropertiesLauncher migrate --source-main=jdbc:sqlite:/path/to/config/database.sqlite --source-tasks=jdbc:sqlite:/path/to/config/tasks.sqlite --target=jdbc:postgresql://localhost:5432/komga --target-user=komga --target-password=change-me --report=/path/to/config/migration.json
+java -Dloader.main=org.gotson.komga.infrastructure.migration.MigrationCommandKt -cp komga/build/libs/komga-1.24.4.jar org.springframework.boot.loader.launch.PropertiesLauncher preflight --source-config-dir=/path/to/config --target=jdbc:postgresql://localhost:5432/komga --target-user=komga --target-password=change-me --report=/path/to/config/migration-preflight.json
+java -Dloader.main=org.gotson.komga.infrastructure.migration.MigrationCommandKt -cp komga/build/libs/komga-1.24.4.jar org.springframework.boot.loader.launch.PropertiesLauncher migrate --source-config-dir=/path/to/config --target=jdbc:postgresql://localhost:5432/komga --target-user=komga --target-password=change-me --report=/path/to/config/migration.json
 ```
 
 Docker deployments can use the `migration` entrypoint command:
 
 ```sh
-docker run --rm -v /path/to/config:/config gotson/komga:latest migration preflight --source-main=jdbc:sqlite:/config/database.sqlite --source-tasks=jdbc:sqlite:/config/tasks.sqlite --target=jdbc:postgresql://postgres:5432/komga --target-user=komga --target-password=change-me --report=/config/migration-preflight.json
-docker run --rm -v /path/to/config:/config gotson/komga:latest migration migrate --source-main=jdbc:sqlite:/config/database.sqlite --source-tasks=jdbc:sqlite:/config/tasks.sqlite --target=jdbc:postgresql://postgres:5432/komga --target-user=komga --target-password=change-me --report=/config/migration.json
+docker run --rm -v /path/to/config:/config gotson/komga:latest migration preflight --source-config-dir=/config --target=jdbc:postgresql://postgres:5432/komga --target-user=komga --target-password=change-me --report=/config/migration-preflight.json
+docker run --rm -v /path/to/config:/config gotson/komga:latest migration migrate --source-config-dir=/config --target=jdbc:postgresql://postgres:5432/komga --target-user=komga --target-password=change-me --report=/config/migration.json
 ```
+
+`--source-config-dir` uses Komga's default SQLite file names, `database.sqlite` and `tasks.sqlite`. For custom SQLite locations, pass `--source-main=jdbc:sqlite:/path/to/database.sqlite` and `--source-tasks=jdbc:sqlite:/path/to/tasks.sqlite` directly.
 
 Generated book thumbnail cache storage can also be configured. Database storage is the default. `FILESYSTEM` and `HYBRID` store generated thumbnail cache files under the configured directory, while durable user-uploaded covers and non-book thumbnail tables remain database-backed:
 

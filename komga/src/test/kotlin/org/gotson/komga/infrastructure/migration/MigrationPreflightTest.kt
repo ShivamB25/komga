@@ -446,6 +446,7 @@ class MigrationPreflightTest {
     assertThat(MigrationCommand.help())
       .contains("preflight")
       .contains("migrate")
+      .contains("--source-config-dir")
       .contains("does not start the HTTP server")
       .contains("task processors")
   }
@@ -459,6 +460,54 @@ class MigrationPreflightTest {
   @Test
   fun `given missing required command args when executed then it returns argument error`() {
     assertThat(MigrationCommand.execute(arrayOf("preflight", "--source-main=jdbc:sqlite:missing-main.sqlite"))).isEqualTo(2)
+  }
+
+  @Test
+  fun `given source config dir when command executes then source SQLite urls are inferred`() {
+    val sourceConfigDir = tempDir.resolve("config")
+    val reportPath = tempDir.resolve("config-dir-preflight-report.json")
+
+    val exitCode =
+      MigrationCommand.execute(
+        arrayOf(
+          "preflight",
+          "--source-config-dir=${sourceConfigDir.absolutePathString()}",
+          "--target=jdbc:sqlite:${tempDir.resolve("target.sqlite").absolutePathString()}",
+          "--report=${reportPath.absolutePathString()}",
+        ),
+      )
+
+    assertThat(exitCode).isEqualTo(1)
+    assertThat(reportPath.readText())
+      .contains("jdbc:sqlite:${sourceConfigDir.resolve("database.sqlite")}")
+      .contains("jdbc:sqlite:${sourceConfigDir.resolve("tasks.sqlite")}")
+  }
+
+  @Test
+  fun `given explicit source urls with source config dir when command executes then explicit urls win`() {
+    val sourceConfigDir = tempDir.resolve("config")
+    val explicitMain = "jdbc:sqlite:${tempDir.resolve("custom-main.sqlite").absolutePathString()}"
+    val explicitTasks = "jdbc:sqlite:${tempDir.resolve("custom-tasks.sqlite").absolutePathString()}"
+    val reportPath = tempDir.resolve("explicit-sources-preflight-report.json")
+
+    val exitCode =
+      MigrationCommand.execute(
+        arrayOf(
+          "preflight",
+          "--source-config-dir=${sourceConfigDir.absolutePathString()}",
+          "--source-main=$explicitMain",
+          "--source-tasks=$explicitTasks",
+          "--target=jdbc:sqlite:${tempDir.resolve("target.sqlite").absolutePathString()}",
+          "--report=${reportPath.absolutePathString()}",
+        ),
+      )
+
+    assertThat(exitCode).isEqualTo(1)
+    assertThat(reportPath.readText())
+      .contains(explicitMain)
+      .contains(explicitTasks)
+      .doesNotContain("jdbc:sqlite:${sourceConfigDir.resolve("database.sqlite")}")
+      .doesNotContain("jdbc:sqlite:${sourceConfigDir.resolve("tasks.sqlite")}")
   }
 
   @Test
