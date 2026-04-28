@@ -43,12 +43,15 @@ RUN apt -y update && \
 FROM build-${TARGETARCH} AS runner
 VOLUME /config
 WORKDIR /app
+COPY --from=builder /builder/application.jar ./application.jar
 COPY --from=builder /builder/extracted/dependencies/ ./
 COPY --from=builder /builder/extracted/spring-boot-loader/ ./
 COPY --from=builder /builder/extracted/snapshot-dependencies/ ./
 COPY --from=builder /builder/extracted/application/ ./
+COPY komga-entrypoint.sh /usr/local/bin/komga-entrypoint
+RUN chmod +x /usr/local/bin/komga-entrypoint
 ENV KOMGA_CONFIGDIR="/config"
 ENV LANG='en_US.UTF-8' LANGUAGE='en_US:en' LC_ALL='en_US.UTF-8'
-ENTRYPOINT ["java", "-Dspring.profiles.include=docker", "--enable-native-access=ALL-UNNAMED", "-jar", "application.jar", "--spring.config.additional-location=file:/config/"]
+ENTRYPOINT ["/usr/local/bin/komga-entrypoint"]
 EXPOSE 25600
 LABEL org.opencontainers.image.source="https://github.com/gotson/komga"

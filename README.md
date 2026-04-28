@@ -57,6 +57,13 @@ komga:
 
 The two PostgreSQL datasources may share one database; Komga keeps their Flyway histories separated. PostgreSQL startup requires all PostgreSQL properties above and rejects unsupported SQLite-only tuning such as custom pragmas or busy timeouts. Migrating an existing SQLite installation to PostgreSQL is never automatic and must be run with the explicit offline migration command.
 
+Docker deployments can run the offline migration with the same Komga image version by using the `migration` entrypoint command while the normal Komga container is stopped:
+
+```sh
+docker run --rm -v /path/to/config:/config gotson/komga:latest migration preflight --source-main=jdbc:sqlite:/config/database.sqlite --source-tasks=jdbc:sqlite:/config/tasks.sqlite --target=jdbc:postgresql://postgres:5432/komga --target-user=komga --target-password=change-me --report=/config/migration-preflight.json
+docker run --rm -v /path/to/config:/config gotson/komga:latest migration migrate --source-main=jdbc:sqlite:/config/database.sqlite --source-tasks=jdbc:sqlite:/config/tasks.sqlite --target=jdbc:postgresql://postgres:5432/komga --target-user=komga --target-password=change-me --report=/config/migration.json
+```
+
 Generated book thumbnail cache storage can also be configured. Database storage is the default. `FILESYSTEM` and `HYBRID` store generated thumbnail cache files under the configured directory, while durable user-uploaded covers and non-book thumbnail tables remain database-backed:
 
 ```yaml
