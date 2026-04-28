@@ -716,7 +716,7 @@ object MigrationJdbcInspector {
     val sql =
       """
       select c.collprovider::text,
-             coalesce(c.colliculocale, c.collcollate) as locale,
+             coalesce(c.colllocale, c.collcollate) as locale,
              c.collisdeterministic
       from pg_collation c
       join pg_namespace n on n.oid = c.collnamespace

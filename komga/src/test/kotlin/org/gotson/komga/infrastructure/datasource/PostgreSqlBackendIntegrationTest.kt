@@ -253,14 +253,14 @@ class PostgreSqlBackendIntegrationTest {
         dsl
           .select(
             DSL.field("collprovider", String::class.java),
-            DSL.field("colliculocale", String::class.java),
+            DSL.field("colllocale", String::class.java),
             DSL.field("collisdeterministic", Boolean::class.java),
           ).from("pg_collation")
           .where(DSL.field("collname").eq(SqliteUdfDataSource.COLLATION_UNICODE_3))
           .fetchOne()
 
       assertThat(collation?.value1()).isEqualTo("i")
-      assertThat(collation?.value2()).isEqualTo("und-u-kk-ks-level3")
+      assertThat(collation?.value2()).isIn("und-u-ks-level3-kk-true", "und-u-kk-ks-level3")
       assertThat(collation?.value3()).isFalse
 
       val composed = "\u00e9clair"
