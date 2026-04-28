@@ -237,6 +237,8 @@ tasks {
 }
 
 springBoot {
+  mainClass = "org.gotson.komga.ApplicationKt"
+
   buildInfo {
     // prevent task bootBuildInfo to rerun every time
     excludes = setOf("time")
