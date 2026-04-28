@@ -51,6 +51,60 @@ class PostgreSqlMigrationPreflightTest {
   }
 
   @Test
+  fun `given empty PostgreSQL target when migration preflight runs then target main and tasks schemas are initialized`() {
+    PostgreSqlMigrationFixture.resetTarget()
+
+    val report =
+      MigrationPreflight().run(
+        MigrationRequest(
+          sourceMain = JdbcEndpoint(fixture.createSourceMain()),
+          sourceTasks = JdbcEndpoint(fixture.createSourceTasks()),
+          target = JdbcEndpoint(JDBC_URL, USERNAME, PASSWORD),
+          mode = MigrationMode.PREFLIGHT,
+        ),
+      )
+
+    assertThat(report.status).describedAs(report.failure ?: "preflight should initialize target schema").isEqualTo(MigrationStatus.SUCCESS)
+    assertThat(report.failure).isNull()
+    DriverManager.getConnection(JDBC_URL, USERNAME, PASSWORD).use { targetConnection ->
+      assertThat(MigrationJdbcInspector.currentFlywayVersion(targetConnection, "flyway_schema_history_main"))
+        .isEqualTo(MigrationSchemaPolicy.TARGET_MAIN_VERSION)
+      assertThat(MigrationJdbcInspector.currentFlywayVersion(targetConnection, "flyway_schema_history_tasks"))
+        .isEqualTo(MigrationSchemaPolicy.TARGET_TASKS_VERSION)
+      assertThat(MigrationJdbcInspector.tableExists(targetConnection, "BOOK")).isTrue
+      assertThat(MigrationJdbcInspector.tableExists(targetConnection, "TASK")).isTrue
+      assertThat(MigrationJdbcInspector.rowCount(targetConnection, "BOOK")).isZero()
+      assertThat(MigrationJdbcInspector.rowCount(targetConnection, "TASK")).isZero()
+    }
+  }
+
+  @Test
+  fun `given empty PostgreSQL target when migration runs then target schema is initialized before copying data`() {
+    PostgreSqlMigrationFixture.resetTarget()
+
+    val report =
+      MigrationPreflight().run(
+        MigrationRequest(
+          sourceMain = JdbcEndpoint(fixture.createMigratedSourceMain()),
+          sourceTasks = JdbcEndpoint(fixture.createMigratedSourceTasks()),
+          target = JdbcEndpoint(JDBC_URL, USERNAME, PASSWORD),
+          mode = MigrationMode.MIGRATE,
+        ),
+      )
+
+    assertThat(report.status).describedAs(report.failure ?: "migration should initialize target schema").isEqualTo(MigrationStatus.SUCCESS)
+    assertThat(report.failure).isNull()
+    DriverManager.getConnection(JDBC_URL, USERNAME, PASSWORD).use { targetConnection ->
+      assertThat(MigrationJdbcInspector.currentFlywayVersion(targetConnection, "flyway_schema_history_main"))
+        .isEqualTo(MigrationSchemaPolicy.TARGET_MAIN_VERSION)
+      assertThat(MigrationJdbcInspector.currentFlywayVersion(targetConnection, "flyway_schema_history_tasks"))
+        .isEqualTo(MigrationSchemaPolicy.TARGET_TASKS_VERSION)
+      assertThat(MigrationJdbcInspector.tableExists(targetConnection, "TASK")).isTrue
+      assertThat(MigrationJdbcInspector.rowCount(targetConnection, "BOOK")).isGreaterThan(0)
+    }
+  }
+
+  @Test
   fun `given held PostgreSQL migration lock when preflight runs then it aborts before bookkeeping writes`() {
     DriverManager.getConnection(JDBC_URL, USERNAME, PASSWORD).use { lockConnection ->
       lockConnection.createStatement().executeQuery("select pg_advisory_lock(hashtext('komga_migration'))").use { it.next() }

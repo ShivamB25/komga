@@ -45,6 +45,7 @@ object MigrationCommand {
     --source-config-dir infers database.sqlite and tasks.sqlite from the given Komga config directory.
     Use --source-main and --source-tasks directly for custom SQLite database locations.
 
+    The command validates and initializes the target PostgreSQL schema when needed, then verifies the target is empty or resumable before copying data.
     This command is explicit and offline. It does not start the HTTP server, schedulers, task processors, scanners, SSE, or search lifecycle.
     """.trimIndent()
 

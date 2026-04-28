@@ -67,8 +67,8 @@ Before migrating:
 
 What the commands do:
 
-- `preflight` checks source and target safety and writes a report without copying data.
-- `migrate` repeats those checks, copies data, and validates the copied data.
+- `preflight` validates and initializes the target PostgreSQL schema when needed, checks source and target safety, and writes a report without copying data.
+- `migrate` repeats those checks, initializes the target PostgreSQL schema when needed, copies data, and validates the copied data.
 
 For most installs, pass only the Komga config folder with `--source-config-dir`; it resolves both `database.sqlite` and `tasks.sqlite`.
 

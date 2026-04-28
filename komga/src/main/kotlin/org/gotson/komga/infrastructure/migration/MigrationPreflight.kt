@@ -2,7 +2,9 @@ package org.gotson.komga.infrastructure.migration
 
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.fasterxml.jackson.module.kotlin.registerKotlinModule
+import org.flywaydb.core.Flyway
 import org.gotson.komga.infrastructure.datasource.DatabaseBackend
+import org.gotson.komga.infrastructure.datasource.DatabaseScope
 import java.security.MessageDigest
 import java.sql.Connection
 import java.time.Duration
@@ -57,6 +59,7 @@ class MigrationPreflight(
             lockGuards[0].use {
               lockGuards[1].use {
                 measure("schema", timings) {
+                  ensureTargetPostgresqlSchema(request.target, target)
                   requireCurrentSchema(sourceMain, "flyway_schema_history", MigrationSchemaPolicy.SOURCE_MAIN_VERSION, MigrationSource.MAIN, "source main SQLite")
                   requireCurrentSchema(sourceTasks, "flyway_schema_history", MigrationSchemaPolicy.SOURCE_TASKS_VERSION, MigrationSource.TASKS, "source tasks SQLite")
                   requireCurrentSchema(target, "flyway_schema_history_main", MigrationSchemaPolicy.TARGET_MAIN_VERSION, MigrationSource.MAIN, "target PostgreSQL main")
@@ -251,6 +254,31 @@ class MigrationPreflight(
         }
       throw MigrationPreflightException(MigrationPhase.VALIDATION, "Post-copy $label validation failed: ${failures.size} failure(s): $names.")
     }
+  }
+
+  private fun ensureTargetPostgresqlSchema(
+    endpoint: JdbcEndpoint,
+    connection: Connection,
+  ) {
+    if (!MigrationJdbcInspector.isPostgresql(connection)) return
+
+    migrateTargetSchema(endpoint, DatabaseScope.MAIN)
+    migrateTargetSchema(endpoint, DatabaseScope.TASKS)
+  }
+
+  private fun migrateTargetSchema(
+    endpoint: JdbcEndpoint,
+    scope: DatabaseScope,
+  ) {
+    val configuration =
+      Flyway
+        .configure()
+        .dataSource(endpoint.url, endpoint.username, endpoint.password)
+        .locations(DatabaseBackend.POSTGRESQL.flywayLocation(scope))
+        .table(DatabaseBackend.POSTGRESQL.flywayHistoryTable(scope))
+
+    if (scope == DatabaseScope.TASKS) configuration.baselineOnMigrate(true)
+    configuration.load().migrate()
   }
 
   private fun requireCurrentSchema(

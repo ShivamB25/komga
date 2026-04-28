@@ -295,15 +295,19 @@ internal class PostgreSqlMigrationFixture(
       )
 
     fun resetAndMigrateTarget() {
+      resetTarget()
+
+      migrateTarget(DatabaseScope.MAIN).migrate()
+      migrateTarget(DatabaseScope.TASKS).migrate()
+    }
+
+    fun resetTarget() {
       DriverManager.getConnection(JDBC_URL, USERNAME, PASSWORD).use { connection ->
         connection.createStatement().use {
           it.execute("DROP SCHEMA public CASCADE")
           it.execute("CREATE SCHEMA public")
         }
       }
-
-      migrateTarget(DatabaseScope.MAIN).migrate()
-      migrateTarget(DatabaseScope.TASKS).migrate()
     }
 
     private fun migrateTarget(scope: DatabaseScope): Flyway =
