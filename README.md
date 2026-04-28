@@ -35,6 +35,40 @@ Komga is a media server for your comics, mangas, BDs, magazines and eBooks.
 
 Refer to the [website](https://komga.org/docs/category/installation) for instructions.
 
+### Advanced experimental configuration
+
+SQLite remains the default database and requires no configuration. PostgreSQL is available as an advanced, opt-in, experimental backend; configure both the main and tasks databases explicitly:
+
+```yaml
+komga:
+  database:
+    backend: POSTGRESQL
+    postgresql:
+      url: jdbc:postgresql://localhost:5432/komga
+      username: komga
+      password: change-me
+  tasks-db:
+    backend: POSTGRESQL
+    postgresql:
+      url: jdbc:postgresql://localhost:5432/komga
+      username: komga
+      password: change-me
+```
+
+The two PostgreSQL datasources may share one database; Komga keeps their Flyway histories separated. PostgreSQL startup requires all PostgreSQL properties above and rejects unsupported SQLite-only tuning such as custom pragmas or busy timeouts. Migrating an existing SQLite installation to PostgreSQL is never automatic and must be run with the explicit offline migration command.
+
+Generated book thumbnail cache storage can also be configured. Database storage is the default. `FILESYSTEM` and `HYBRID` store generated thumbnail cache files under the configured directory, while durable user-uploaded covers and non-book thumbnail tables remain database-backed:
+
+```yaml
+komga:
+  thumbnails:
+    storage:
+      mode: FILESYSTEM # DATABASE, FILESYSTEM, or HYBRID
+      directory: /path/to/komga-thumbnail-cache
+```
+
+Generated thumbnail JPEG quality is a server setting exposed as `thumbnailJpegQuality` through the settings API. Values must be between `1` and `100`; omit or set it to `null` to keep the default encoder behavior.
+
 ## Documentation
 
 Head over to our [website](https://komga.org) for more information.
