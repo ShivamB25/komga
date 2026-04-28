@@ -55,9 +55,20 @@ komga:
       password: change-me
 ```
 
-The two PostgreSQL datasources may share one database; Komga keeps their Flyway histories separated. PostgreSQL startup requires all PostgreSQL properties above and rejects unsupported SQLite-only tuning such as custom pragmas or busy timeouts. Migrating an existing SQLite installation to PostgreSQL is never automatic and must be run with the explicit offline migration command.
+The two PostgreSQL datasources may share one database; Komga keeps their Flyway histories separated. PostgreSQL startup requires all PostgreSQL properties above and rejects unsupported SQLite-only tuning such as custom pragmas or busy timeouts. Migrating an existing SQLite installation to PostgreSQL is never automatic and must be run explicitly while Komga is offline.
 
-Docker deployments can run the offline migration with the same Komga image version by using the `migration` entrypoint command while the normal Komga container is stopped:
+#### SQLite to PostgreSQL migration
+
+Stop the normal Komga process or container before migrating. Use the same Komga version as your target installation, run `preflight` first, review the generated report, then run `migrate`.
+
+For a built jar, invoke the migration command through Spring Boot's `PropertiesLauncher`:
+
+```sh
+java -Dloader.main=org.gotson.komga.infrastructure.migration.MigrationCommandKt -cp komga/build/libs/komga-1.24.4.jar org.springframework.boot.loader.launch.PropertiesLauncher preflight --source-main=jdbc:sqlite:/path/to/config/database.sqlite --source-tasks=jdbc:sqlite:/path/to/config/tasks.sqlite --target=jdbc:postgresql://localhost:5432/komga --target-user=komga --target-password=change-me --report=/path/to/config/migration-preflight.json
+java -Dloader.main=org.gotson.komga.infrastructure.migration.MigrationCommandKt -cp komga/build/libs/komga-1.24.4.jar org.springframework.boot.loader.launch.PropertiesLauncher migrate --source-main=jdbc:sqlite:/path/to/config/database.sqlite --source-tasks=jdbc:sqlite:/path/to/config/tasks.sqlite --target=jdbc:postgresql://localhost:5432/komga --target-user=komga --target-password=change-me --report=/path/to/config/migration.json
+```
+
+Docker deployments can use the `migration` entrypoint command:
 
 ```sh
 docker run --rm -v /path/to/config:/config gotson/komga:latest migration preflight --source-main=jdbc:sqlite:/config/database.sqlite --source-tasks=jdbc:sqlite:/config/tasks.sqlite --target=jdbc:postgresql://postgres:5432/komga --target-user=komga --target-password=change-me --report=/config/migration-preflight.json
