@@ -60,6 +60,7 @@ The two PostgreSQL datasources may share one database; Komga keeps their Flyway 
 #### SQLite to PostgreSQL migration
 
 Stop the normal Komga process or container before migrating. Use the same Komga version as your target installation, run `preflight` first, review the generated report, then run `migrate`.
+`preflight` checks source and target safety and writes a report without copying data. `migrate` repeats those checks, copies data, and validates the copied data.
 
 For a built jar, invoke the migration command through Spring Boot's `PropertiesLauncher`:
 
