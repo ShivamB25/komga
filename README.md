@@ -61,6 +61,7 @@ The two PostgreSQL datasources may share one database; Komga keeps their Flyway 
 
 Stop the normal Komga process or container before migrating. Use the same Komga version as your target installation, run `preflight` first, review the generated report, then run `migrate`.
 `preflight` checks source and target safety and writes a report without copying data. `migrate` repeats those checks, copies data, and validates the copied data.
+The examples below use one source location, `--source-config-dir`, for the Komga config folder; it resolves both `database.sqlite` and `tasks.sqlite`.
 
 For a built jar, invoke the migration command through Spring Boot's `PropertiesLauncher`:
 
@@ -76,7 +77,7 @@ docker run --rm -v /path/to/config:/config gotson/komga:latest migration preflig
 docker run --rm -v /path/to/config:/config gotson/komga:latest migration migrate --source-config-dir=/config --target=jdbc:postgresql://postgres:5432/komga --target-user=komga --target-password=change-me --report=/config/migration.json
 ```
 
-`--source-config-dir` uses Komga's default SQLite file names, `database.sqlite` and `tasks.sqlite`. For custom SQLite locations, pass `--source-main=jdbc:sqlite:/path/to/database.sqlite` and `--source-tasks=jdbc:sqlite:/path/to/tasks.sqlite` directly.
+For advanced setups with custom SQLite locations, pass `--source-main=jdbc:sqlite:/path/to/database.sqlite` and `--source-tasks=jdbc:sqlite:/path/to/tasks.sqlite` directly.
 
 Generated book thumbnail cache storage can also be configured. Database storage is the default. `FILESYSTEM` and `HYBRID` store generated thumbnail cache files under the configured directory, while durable user-uploaded covers and non-book thumbnail tables remain database-backed:
 
